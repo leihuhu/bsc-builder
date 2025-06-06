@@ -69,12 +69,6 @@ const (
 	// the current 4 mining loops could have asynchronous risk of mining block with
 	// save height, keep recently mined blocks to avoid double sign for safety,
 	recentMinedCacheLimit = 20
-
-	// Reserve block size for the following 3 components:
-	// a. System transactions at the end of the block
-	// b. Seal in the block header
-	// c. Overhead from RLP encoding
-	blockReserveSize = 100 * 1024
 )
 
 var (
@@ -101,7 +95,6 @@ type environment struct {
 	signer   types.Signer
 	state    *state.StateDB // apply state changes here
 	tcount   int            // tx count in cycle
-	size     uint32         // almost accurate block size,
 	gasPool  *core.GasPool  // available gas used to pack transactions
 	coinbase common.Address
 	evm      *vm.EVM
@@ -125,7 +118,6 @@ func (env *environment) copy() *environment {
 		signer:   env.signer,
 		state:    env.state.Copy(),
 		tcount:   env.tcount,
-		size:     env.size,
 		coinbase: env.coinbase,
 		header:   types.CopyHeader(env.header),
 		receipts: copyReceipts(env.receipts),
@@ -304,7 +296,10 @@ func newWorker(config *minerconfig.Config, engine consensus.Engine, eth Backend,
 	worker.chainHeadSub = eth.BlockChain().SubscribeChainHeadEvent(worker.chainHeadCh)
 
 	// Sanitize recommit interval if the user-specified one is too short.
-	recommit := worker.config.Recommit
+	recommit := minRecommitInterval
+	if worker.config.Recommit != nil && *worker.config.Recommit > minRecommitInterval {
+		recommit = *worker.config.Recommit
+	}
 	if recommit < minRecommitInterval {
 		log.Warn("Sanitizing miner recommit interval", "provided", recommit, "updated", minRecommitInterval)
 		recommit = minRecommitInterval
@@ -483,10 +478,12 @@ func (w *worker) newWorkLoop(recommit time.Duration) {
 			if p, ok := w.engine.(*parlia.Parlia); ok {
 				signedRecent, err := p.SignRecently(w.chain, head.Header)
 				if err != nil {
+					timer.Reset(recommit)
 					log.Debug("Not allowed to propose block", "err", err)
 					continue
 				}
 				if signedRecent {
+					timer.Reset(recommit)
 					log.Info("Signed recently, must wait")
 					continue
 				}
@@ -866,6 +863,7 @@ func (w *worker) commitTransactions(env *environment, plainTxs, blobTxs *transac
 		processorCapacity = plainTxs.CurrentSize()
 	}
 	bloomProcessors := core.NewAsyncReceiptBloomGenerator(processorCapacity)
+	defer bloomProcessors.Close()
 
 	stopPrefetchCh := make(chan struct{})
 	defer close(stopPrefetchCh)
@@ -971,13 +969,6 @@ LOOP:
 			txs.Pop()
 			continue
 		}
-		// If we don't have enough size left for the next transaction, skip it.
-		if env.size+uint32(tx.Size())+blockReserveSize > params.MaxMessageSize {
-			log.Trace("Not enough size left for transaction", "hash", ltx.Hash,
-				"env.size", env.size, "needed", uint32(tx.Size()))
-			txs.Pop()
-			continue
-		}
 		// Error may be ignored here. The error has already been checked
 		// during transaction acceptance in the transaction pool.
 		from, _ := types.Sender(env.signer, tx)
@@ -1003,7 +994,6 @@ LOOP:
 			// Everything ok, collect the logs and shift in the next transaction from the same account
 			coalescedLogs = append(coalescedLogs, logs...)
 			env.tcount++
-			env.size += uint32(tx.Size()) // size of BlobTxSidecar included
 			txs.Shift()
 
 		default:
@@ -1013,7 +1003,6 @@ LOOP:
 			txs.Pop()
 		}
 	}
-	bloomProcessors.Close()
 	if !w.isRunning() && len(coalescedLogs) > 0 {
 		// We don't push the pendingLogsEvent while we are sealing. The reason is that
 		// when we are sealing, the worker will regenerate a sealing block every 3 seconds.
@@ -1129,7 +1118,7 @@ func (w *worker) prepareWork(genParams *generateParams, witness bool) (*environm
 		return nil, err
 	}
 
-	// Handle upgrade build-in system contract code
+	// Handle upgrade built-in system contract code
 	systemcontracts.TryUpdateBuildInSystemContract(w.chainConfig, header.Number, parent.Time, header.Time, env.state, true)
 
 	if header.ParentBeaconRoot != nil {
@@ -1139,9 +1128,6 @@ func (w *worker) prepareWork(genParams *generateParams, witness bool) (*environm
 	if w.chainConfig.IsPrague(header.Number, header.Time) {
 		core.ProcessParentBlockHash(header.ParentHash, env.evm)
 	}
-
-	env.size = uint32(env.header.Size())
-
 	return env, nil
 }
 
@@ -1236,7 +1222,7 @@ func (w *worker) generateWork(params *generateParams, witness bool) *newPayloadR
 
 	if !params.noTxs {
 		interrupt := new(atomic.Int32)
-		timer := time.AfterFunc(w.config.Recommit, func() {
+		timer := time.AfterFunc(*w.config.Recommit, func() {
 			interrupt.Store(commitInterruptTimeout)
 		})
 		defer timer.Stop()
@@ -1489,7 +1475,6 @@ LOOP:
 
 	// when out-turn, use bestWork to prevent bundle leakage.
 	// when in-turn, compare with remote work.
-	from := bestWork.coinbase
 	if w.bidFetcher != nil && bestWork.header.Difficulty.Cmp(diffInTurn) == 0 {
 		inturnBlocksGauge.Inc(1)
 		// We want to start sealing the block as late as possible here if mev is enabled, so we could give builder the chance to send their final bid.
@@ -1536,11 +1521,10 @@ LOOP:
 				bidWinGauge.Inc(1)
 
 				bestWork = bestBid.env
-				from = bestBid.bid.Builder
 
 				log.Info("[BUILDER BLOCK]",
 					"block", bestWork.header.Number.Uint64(),
-					"builder", from,
+					"builder", bestBid.bid.Builder,
 					"blockReward", weiToEtherStringF6(bestBid.packedBlockReward),
 					"validatorReward", weiToEtherStringF6(bestBid.packedValidatorReward),
 					"bid", bestBid.bid.Hash().TerminalString(),
@@ -1548,8 +1532,6 @@ LOOP:
 			}
 		}
 	}
-
-	metrics.GetOrRegisterCounter(fmt.Sprintf("block/from/%v", from), nil).Inc(1)
 
 	w.commit(bestWork, w.fullTaskHook, true, start)
 
@@ -1649,7 +1631,7 @@ func (w *worker) tryWaitProposalDoneWhenStopping() {
 	}
 
 	log.Info("Checking miner's next proposal block", "current", currentBlock,
-		"proposalStart", startBlock, "proposalEnd", endBlock, "maxWait", w.config.MaxWaitProposalInSecs)
+		"proposalStart", startBlock, "proposalEnd", endBlock, "maxWait", *w.config.MaxWaitProposalInSecs)
 	if endBlock <= currentBlock {
 		log.Warn("next proposal end block has passed, ignore")
 		return
@@ -1658,7 +1640,7 @@ func (w *worker) tryWaitProposalDoneWhenStopping() {
 	if err != nil {
 		log.Debug("failed to get BlockInterval when tryWaitProposalDoneWhenStopping")
 	}
-	if startBlock > currentBlock && ((startBlock-currentBlock)*blockInterval/1000) > w.config.MaxWaitProposalInSecs {
+	if startBlock > currentBlock && ((startBlock-currentBlock)*blockInterval/1000) > *w.config.MaxWaitProposalInSecs {
 		log.Warn("the next proposal start block is too far, just skip waiting")
 		return
 	}

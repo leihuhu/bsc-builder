@@ -715,7 +715,7 @@ func (bc *BlockChain) GetJustifiedNumber(header *types.Header) uint64 {
 }
 
 // getFinalizedNumber returns the highest finalized number before the specific block.
-func (bc *BlockChain) getFinalizedNumber(header *types.Header) uint64 {
+func (bc *BlockChain) GetFinalizedNumber(header *types.Header) uint64 {
 	if p, ok := bc.engine.(consensus.PoSA); ok {
 		if finalizedHeader := p.GetFinalizedHeader(bc, header); finalizedHeader != nil {
 			return finalizedHeader.Number.Uint64()
@@ -747,7 +747,7 @@ func (bc *BlockChain) loadLastState() error {
 	bc.currentBlock.Store(headBlock.Header())
 	headBlockGauge.Update(int64(headBlock.NumberU64()))
 	justifiedBlockGauge.Update(int64(bc.GetJustifiedNumber(headBlock.Header())))
-	finalizedBlockGauge.Update(int64(bc.getFinalizedNumber(headBlock.Header())))
+	finalizedBlockGauge.Update(int64(bc.GetFinalizedNumber(headBlock.Header())))
 
 	// Restore the last known head header
 	headHeader := headBlock.Header()
@@ -1119,17 +1119,16 @@ func (bc *BlockChain) setHeadBeyondRoot(head uint64, time uint64, root common.Ha
 		// Ignore the error here since light client won't hit this path
 		frozen, _ := bc.db.BlockStore().Ancients()
 		if num+1 <= frozen {
-			// Truncate all relative data(header, total difficulty, body, receipt
-			// and canonical hash) from ancient store.
-			if _, err := bc.db.BlockStore().TruncateHead(num); err != nil {
-				log.Crit("Failed to truncate ancient data", "number", num, "err", err)
-			}
-			// Remove the hash <-> number mapping from the active store.
-			rawdb.DeleteHeaderNumber(db, hash)
+			// The chain segment, such as the block header, canonical hash,
+			// body, and receipt, will be removed from the ancient store
+			// in one go.
+			//
+			// The hash-to-number mapping in the key-value store will be
+			// removed by the hc.SetHead function.
 		} else {
-			// Remove relative body and receipts from the active store.
-			// The header, total difficulty and canonical hash will be
-			// removed in the hc.SetHead function.
+			// Remove the associated body and receipts from the key-value store.
+			// The header, hash-to-number mapping, and canonical hash will be
+			// removed by the hc.SetHead function.
 			rawdb.DeleteBody(db, hash, num)
 			rawdb.DeleteBlobSidecars(db, hash, num)
 			rawdb.DeleteReceipts(db, hash, num)
@@ -1196,7 +1195,7 @@ func (bc *BlockChain) SnapSyncCommitHead(hash common.Hash) error {
 	bc.currentBlock.Store(block.Header())
 	headBlockGauge.Update(int64(block.NumberU64()))
 	justifiedBlockGauge.Update(int64(bc.GetJustifiedNumber(block.Header())))
-	finalizedBlockGauge.Update(int64(bc.getFinalizedNumber(block.Header())))
+	finalizedBlockGauge.Update(int64(bc.GetFinalizedNumber(block.Header())))
 	bc.chainmu.Unlock()
 
 	// Destroy any existing state snapshot and regenerate it in the background,
@@ -1337,7 +1336,7 @@ func (bc *BlockChain) writeHeadBlock(block *types.Block) {
 	bc.currentBlock.Store(block.Header())
 	headBlockGauge.Update(int64(block.NumberU64()))
 	justifiedBlockGauge.Update(int64(bc.GetJustifiedNumber(block.Header())))
-	finalizedBlockGauge.Update(int64(bc.getFinalizedNumber(block.Header())))
+	finalizedBlockGauge.Update(int64(bc.GetFinalizedNumber(block.Header())))
 }
 
 // stopWithoutSaving stops the blockchain service. If any imports are currently in progress
@@ -1599,7 +1598,7 @@ func (bc *BlockChain) InsertReceiptChain(blockChain types.Blocks, receiptChain [
 		size += writeSize
 
 		// Sync the ancient store explicitly to ensure all data has been flushed to disk.
-		if err := bc.db.BlockStore().Sync(); err != nil {
+		if err := bc.db.BlockStore().SyncAncient(); err != nil {
 			return 0, err
 		}
 		// Update the current snap block because all block data is now present in DB.
@@ -2617,9 +2616,6 @@ func (bc *BlockChain) insertSideChain(block *types.Block, it *insertIterator, ma
 		if block == nil {
 			log.Crit("Importing heavy sidechain block is nil", "hash", hashes[i], "number", numbers[i])
 		}
-		if bc.chainConfig.IsCancun(block.Number(), block.Time()) {
-			block = block.WithSidecars(bc.GetSidecarsByHash(hashes[i]))
-		}
 		blocks = append(blocks, block)
 		memory += block.Size()
 
@@ -2690,9 +2686,6 @@ func (bc *BlockChain) recoverAncestors(block *types.Block, makeWitness bool) (co
 			b = block
 		} else {
 			b = bc.GetBlock(hashes[i], numbers[i])
-		}
-		if bc.chainConfig.IsCancun(b.Number(), b.Time()) {
-			b = b.WithSidecars(bc.GetSidecarsByHash(b.Hash()))
 		}
 		if _, _, err := bc.insertChain(types.Blocks{b}, false, makeWitness && i == 0); err != nil {
 			return b.ParentHash(), err

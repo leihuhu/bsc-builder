@@ -67,12 +67,10 @@ var (
 	// Test transactions
 	pendingTxs []*types.Transaction
 	newTxs     []*types.Transaction
-
-	testDelayLeftOver = time.Duration(100)
-	testConfig        = &minerconfig.Config{
-		Recommit:      time.Second,
-		GasCeil:       params.GenesisGasLimit,
-		DelayLeftOver: &testDelayLeftOver,
+	oneSecond  = time.Second
+	testConfig = &minerconfig.Config{
+		Recommit: &oneSecond,
+		GasCeil:  params.GenesisGasLimit,
 	}
 )
 
