@@ -81,11 +81,11 @@ func (miner *Miner) SendBid(ctx context.Context, bidArgs *types.BidArgs) (common
 }
 
 func (miner *Miner) MevParams() *types.MevParams {
-	builderFeeCeil, ok := big.NewInt(0).SetString(*miner.worker.config.Mev.BuilderFeeCeil, 10)
-	if !ok {
-		log.Error("failed to parse builder fee ceil", "BuilderFeeCeil", *miner.worker.config.Mev.BuilderFeeCeil)
-		return nil
-	}
+    builderFeeCeil, ok := big.NewInt(0).SetString(*miner.worker.config.Mev.BuilderFeeCeil, 10)
+    if !ok {
+        log.Error("failed to parse builder fee ceil", "BuilderFeeCeil", *miner.worker.config.Mev.BuilderFeeCeil)
+        return nil
+    }
 
 	return &types.MevParams{
 		ValidatorCommission:   *miner.worker.config.Mev.ValidatorCommission,
@@ -97,4 +97,11 @@ func (miner *Miner) MevParams() *types.MevParams {
 		BuilderFeeCeil:        builderFeeCeil,
 		Version:               version.Semantic,
 	}
+}
+
+func (miner *Miner) BestPackedBlockReward(parentHash common.Hash) *big.Int {
+    if miner.bidSimulator == nil {
+        return nil
+    }
+    return miner.bidSimulator.BestPackedBlockReward(parentHash)
 }

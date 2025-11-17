@@ -64,9 +64,9 @@ type BlockChain interface {
 // They exit the pool when they are included in the blockchain or evicted due to
 // resource constraints.
 type TxPool struct {
-	subpools []SubPool // List of subpools for specialized transaction handling
-	chain    BlockChain
-	signer   types.Signer
+    subpools []SubPool // List of subpools for specialized transaction handling
+    chain    BlockChain
+    signer   types.Signer
 
 	stateLock sync.RWMutex   // The lock for protecting state instance
 	state     *state.StateDB // Current state at the blockchain head
@@ -75,7 +75,10 @@ type TxPool struct {
 	quit chan chan error         // Quit channel to tear down the head updater
 	term chan struct{}           // Termination channel to detect a closed pool
 
-	sync chan chan error // Testing / simulator channel to block until internal reset is done
+    sync chan chan error // Testing / simulator channel to block until internal reset is done
+
+    privateLock sync.RWMutex
+    privateSet  map[common.Hash]struct{}
 }
 
 // New creates a new transaction pool to gather, sort and filter inbound
@@ -96,15 +99,16 @@ func New(gasTip uint64, chain BlockChain, subpools []SubPool) (*TxPool, error) {
 	if err != nil {
 		return nil, err
 	}
-	pool := &TxPool{
-		subpools: subpools,
-		chain:    chain,
-		signer:   types.LatestSigner(chain.Config()),
-		state:    statedb,
-		quit:     make(chan chan error),
-		term:     make(chan struct{}),
-		sync:     make(chan chan error),
-	}
+    pool := &TxPool{
+        subpools: subpools,
+        chain:    chain,
+        signer:   types.LatestSigner(chain.Config()),
+        state:    statedb,
+        quit:     make(chan chan error),
+        term:     make(chan struct{}),
+        sync:     make(chan chan error),
+        privateSet:   make(map[common.Hash]struct{}),
+    }
 	reserver := NewReservationTracker()
 	for i, subpool := range subpools {
 		if err := subpool.Init(gasTip, head, reserver.NewHandle(i)); err != nil {
@@ -320,7 +324,14 @@ func (p *TxPool) GetMetadata(hash common.Hash) *TxMetadata {
 //
 // Note, if sync is set the method will block until all internal maintenance
 // related to the add is finished. Only use this during tests for determinism.
-func (p *TxPool) Add(txs []*types.Transaction, sync bool) []error {
+func (p *TxPool) Add(txs []*types.Transaction, sync bool, private bool) []error {
+    if private {
+        p.privateLock.Lock()
+        for _, tx := range txs {
+            p.privateSet[tx.Hash()] = struct{}{}
+        }
+        p.privateLock.Unlock()
+    }
 	// Split the input transactions between the subpools. It shouldn't really
 	// happen that we receive merged batches, but better graceful than strange
 	// errors.
@@ -346,9 +357,9 @@ func (p *TxPool) Add(txs []*types.Transaction, sync bool) []error {
 	// Add the transactions split apart to the individual subpools and piece
 	// back the errors into the original sort order.
 	errsets := make([][]error, len(p.subpools))
-	for i := 0; i < len(p.subpools); i++ {
-		errsets[i] = p.subpools[i].Add(txsets[i], sync, private)
-	}
+    for i := 0; i < len(p.subpools); i++ {
+        errsets[i] = p.subpools[i].Add(txsets[i], sync, private)
+    }
 	errs := make([]error, len(txs))
 	for i, split := range splits {
 		// If the transaction was rejected by all subpools, mark it unsupported
@@ -365,36 +376,67 @@ func (p *TxPool) Add(txs []*types.Transaction, sync bool) []error {
 
 // AddBundle enqueues a bundle into the pool if it is valid.
 func (p *TxPool) AddBundle(bundle *types.Bundle) error {
-	// Try to find a sub pool that accepts the bundle
-	for _, subpool := range p.subpools {
-		if bundleSubpool, ok := subpool.(BundleSubpool); ok {
-			if bundleSubpool.FilterBundle(bundle) {
-				return bundleSubpool.AddBundle(bundle)
-			}
-		}
-	}
-	return errors.New("no subpool accepts the bundle")
+    for _, subpool := range p.subpools {
+        if bp, ok := subpool.(BundleSubpool); ok {
+            if bp.FilterBundle(bundle) {
+                return bp.AddBundle(bundle)
+            }
+        }
+    }
+    return fmt.Errorf("%w: bundle not supported", core.ErrTxTypeNotSupported)
+}
+
+// AllBundles returns all the bundles currently in the pool.
+func (p *TxPool) AllBundles() []*types.Bundle {
+    bundles := make([]*types.Bundle, 0)
+    for _, subpool := range p.subpools {
+        if bp, ok := subpool.(BundleSubpool); ok {
+            bundles = append(bundles, bp.AllBundles()...)
+        }
+    }
+    return bundles
 }
 
 // BundleMetrics returns the metrics of the bundle subpool
-func (p *TxPool) BundleMetrics(fromBlock, toBlock int64) (ret map[int64][][]common.Hash) {
-	for _, subpool := range p.subpools {
-		if bundleSubpool, ok := subpool.(BundleSubpool); ok {
-			return bundleSubpool.BundleMetrics(fromBlock, toBlock)
-		}
-	}
+func (p *TxPool) BundleMetrics(fromBlock, toBlock int64) map[int64][][]common.Hash {
+    ret := make(map[int64][][]common.Hash)
+    for _, subpool := range p.subpools {
+        if bp, ok := subpool.(BundleSubpool); ok {
+            metrics := bp.BundleMetrics(fromBlock, toBlock)
+            for k, v := range metrics {
+                ret[k] = v
+            }
+        }
+    }
+    return ret
+}
 
-	return ret
+// PendingBundles retrieves all currently processable bundles.
+func (p *TxPool) PendingBundles(blockNumber uint64, blockTimestamp uint64) []*types.Bundle {
+    bundles := make([]*types.Bundle, 0)
+    for _, subpool := range p.subpools {
+        if bp, ok := subpool.(BundleSubpool); ok {
+            bundles = append(bundles, bp.PendingBundles(blockNumber, blockTimestamp)...)
+        }
+    }
+    return bundles
 }
 
 // PruneBundle removes a bundle from the pool.
 func (p *TxPool) PruneBundle(hash common.Hash) {
-	for _, subpool := range p.subpools {
-		if bundleSubpool, ok := subpool.(BundleSubpool); ok {
-			bundleSubpool.PruneBundle(hash)
-			return // Only one subpool can have the bundle
-		}
-	}
+    for _, subpool := range p.subpools {
+        if bp, ok := subpool.(BundleSubpool); ok {
+            bp.PruneBundle(hash)
+        }
+    }
+}
+
+// IsPrivateTxHash returns true if the transaction is marked as private.
+func (p *TxPool) IsPrivateTxHash(hash common.Hash) bool {
+    p.privateLock.RLock()
+    _, ok := p.privateSet[hash]
+    p.privateLock.RUnlock()
+    return ok
 }
 
 // Pending retrieves all currently processable transactions, grouped by origin
@@ -408,26 +450,6 @@ func (p *TxPool) Pending(filter PendingFilter) map[common.Address][]*LazyTransac
 		maps.Copy(txs, subpool.Pending(filter))
 	}
 	return txs
-}
-
-// PendingBundles retrieves all currently processable bundles.
-func (p *TxPool) PendingBundles(blockNumber uint64, blockTimestamp uint64) []*types.Bundle {
-	for _, subpool := range p.subpools {
-		if bundleSubpool, ok := subpool.(BundleSubpool); ok {
-			return bundleSubpool.PendingBundles(blockNumber, blockTimestamp)
-		}
-	}
-	return nil
-}
-
-// AllBundles returns all the bundles currently in the pool
-func (p *TxPool) AllBundles() []*types.Bundle {
-	for _, subpool := range p.subpools {
-		if bundleSubpool, ok := subpool.(BundleSubpool); ok {
-			return bundleSubpool.AllBundles()
-		}
-	}
-	return nil
 }
 
 // SubscribeTransactions registers a subscription for new transaction events,
@@ -561,13 +583,4 @@ func (p *TxPool) Clear() {
 	for _, subpool := range p.subpools {
 		subpool.Clear()
 	}
-}
-
-func (p *TxPool) IsPrivateTxHash(hash common.Hash) bool {
-	for _, subpool := range p.subpools {
-		if subpool.IsPrivateTxHash(hash) {
-			return true
-		}
-	}
-	return false
 }

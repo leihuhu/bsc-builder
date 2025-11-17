@@ -17,16 +17,16 @@
 package eth
 
 import (
-	"context"
-	"errors"
-	"math/big"
-	"sort"
-	"time"
+    "context"
+    "errors"
+    "sort"
+    "math/big"
+    "time"
 
 	"github.com/ethereum/go-ethereum"
-	"github.com/ethereum/go-ethereum/accounts"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
+    "github.com/ethereum/go-ethereum/accounts"
+    "github.com/ethereum/go-ethereum/common"
+    "github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
 	"github.com/ethereum/go-ethereum/consensus/parlia"
@@ -36,7 +36,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/txpool"
-	"github.com/ethereum/go-ethereum/core/txpool/locals"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/eth/downloader"
@@ -51,11 +50,11 @@ import (
 
 // EthAPIBackend implements ethapi.Backend and tracers.Backend for full nodes
 type EthAPIBackend struct {
-	extRPCEnabled       bool
-	allowUnprotectedTxs bool
-	privateTxMode       bool
-	eth                 *Ethereum
-	gpo                 *gasprice.Oracle
+    extRPCEnabled       bool
+    allowUnprotectedTxs bool
+    privateTxMode       bool
+    eth                 *Ethereum
+    gpo                 *gasprice.Oracle
 }
 
 // ChainConfig returns the active chain configuration.
@@ -337,29 +336,59 @@ func (b *EthAPIBackend) SubscribeFinalizedHeaderEvent(ch chan<- core.FinalizedHe
 }
 
 func (b *EthAPIBackend) SubscribeLogsEvent(ch chan<- []*types.Log) event.Subscription {
-	return b.eth.BlockChain().SubscribeLogsEvent(ch)
+    return b.eth.BlockChain().SubscribeLogsEvent(ch)
 }
 
-func (b *EthAPIBackend) SendTx(ctx context.Context, signedTx *types.Transaction) error {
-	err := b.eth.txPool.Add([]*types.Transaction{signedTx}, false)[0]
+func (b *EthAPIBackend) SendBundle(ctx context.Context, bundle *types.Bundle) error {
+    return b.eth.txPool.AddBundle(bundle)
+}
 
-	// If the local transaction tracker is not configured, returns whatever
-	// returned from the txpool.
-	if b.eth.localTxTracker == nil {
-		return err
-	}
-	// If the transaction fails with an error indicating it is invalid, or if there is
-	// very little chance it will be accepted later (e.g., the gas price is below the
-	// configured minimum, or the sender has insufficient funds to cover the cost),
-	// propagate the error to the user.
-	if err != nil && !locals.IsTemporaryReject(err) {
-		return err
-	}
-	// No error will be returned to user if the transaction fails with a temporary
-	// error and might be accepted later (e.g., the transaction pool is full).
-	// Locally submitted transactions will be resubmitted later via the local tracker.
-	b.eth.localTxTracker.Track(signedTx)
-	return nil
+func (b *EthAPIBackend) SimulateGaslessBundle(bundle *types.Bundle) (*types.SimulateGaslessBundleResp, error) {
+    return b.Miner().SimulateGaslessBundle(bundle)
+}
+
+func (b *EthAPIBackend) BundlePrice() *big.Int {
+    bundles := b.eth.txPool.AllBundles()
+    gasFloor := big.NewInt(0)
+    if len(bundles) == 0 {
+        return gasFloor
+    }
+    sort.SliceStable(bundles, func(i, j int) bool { return bundles[j].Price.Cmp(bundles[i].Price) < 0 })
+    idx := len(bundles) / 2
+    if bundles[idx] == nil || bundles[idx].Price.Cmp(gasFloor) < 0 {
+        return gasFloor
+    }
+    return bundles[idx].Price
+}
+
+func (b *EthAPIBackend) Bundles(_ context.Context, fromBlock, toBlock int64) []*types.BundlesItem {
+    numberToBundles := b.eth.txPool.BundleMetrics(fromBlock, toBlock)
+    ret := make([]*types.BundlesItem, 0)
+    for i := fromBlock; i <= toBlock; i++ {
+        if bundles, ok := numberToBundles[i]; ok {
+            ret = append(ret, &types.BundlesItem{ReceivedBlock: hexutil.Uint64(i), Bundles: bundles})
+        } else {
+            ret = append(ret, &types.BundlesItem{ReceivedBlock: hexutil.Uint64(i), Bundles: [][]common.Hash{}})
+        }
+    }
+    return ret
+}
+
+func (b *EthAPIBackend) GetTransaction(ctx context.Context, txHash common.Hash) (bool, *types.Transaction, common.Hash, uint64, uint64, error) {
+    found, tx, blockHash, blockIndex, index := b.GetCanonicalTransaction(txHash)
+    if !found || tx == nil {
+        return false, nil, common.Hash{}, 0, 0, nil
+    }
+    return true, tx, blockHash, blockIndex, index, nil
+}
+
+func (b *EthAPIBackend) SendTx(ctx context.Context, signedTx *types.Transaction, private bool) error {
+    if locals := b.eth.localTxTracker; locals != nil {
+        if !private {
+            locals.Track(signedTx)
+        }
+    }
+    return b.eth.txPool.Add([]*types.Transaction{signedTx}, false, private)[0]
 }
 
 func (b *EthAPIBackend) GetPoolTransactions() (types.Transactions, error) {
@@ -480,11 +509,11 @@ func (b *EthAPIBackend) ExtRPCEnabled() bool {
 }
 
 func (b *EthAPIBackend) UnprotectedAllowed() bool {
-	return b.allowUnprotectedTxs
+    return b.allowUnprotectedTxs
 }
 
 func (b *EthAPIBackend) PrivateTxMode() bool {
-	return b.privateTxMode
+    return b.privateTxMode
 }
 
 func (b *EthAPIBackend) RPCGasCap() uint64 {
@@ -574,7 +603,11 @@ func (b *EthAPIBackend) HasBuilder(builder common.Address) bool {
 }
 
 func (b *EthAPIBackend) SendBid(ctx context.Context, bid *types.BidArgs) (common.Hash, error) {
-	return b.Miner().SendBid(ctx, bid)
+    return b.Miner().SendBid(ctx, bid)
+}
+
+func (b *EthAPIBackend) BestBidGasFee(parentHash common.Hash) *big.Int {
+    return b.Miner().BestPackedBlockReward(parentHash)
 }
 
 func (b *EthAPIBackend) MinerInTurn() bool {

@@ -95,24 +95,25 @@ type txPool interface {
 	// given transaction hash.
 	GetMetadata(hash common.Hash) *txpool.TxMetadata
 
-	// Add should add the given transactions to the pool.
-	Add(txs []*types.Transaction, sync bool, private bool) []error
+    // Add should add the given transactions to the pool.
+    Add(txs []*types.Transaction, sync bool, private bool) []error
 
 	// Pending should return pending transactions.
 	// The slice should be modifiable by the caller.
 	Pending(filter txpool.PendingFilter) map[common.Address][]*txpool.LazyTransaction
 
-	// IsPrivateTxHash returns true if the transaction is a private transaction.
-	IsPrivateTxHash(hash common.Hash) bool
 
-	// SubscribeTransactions subscribes to new transaction events. The subscriber
+    // IsPrivateTxHash returns true if the transaction is a private transaction.
+    IsPrivateTxHash(hash common.Hash) bool
+
+    // SubscribeTransactions subscribes to new transaction events. The subscriber
 	// can decide whether to receive notifications only for newly seen transactions
 	// or also for reorged out ones.
 	SubscribeTransactions(ch chan<- core.NewTxsEvent, reorgs bool) event.Subscription
 
-	// SubscribeReannoTxsEvent should return an event subscription of
-	// ReannoTxsEvent and send events to the given channel.
-	SubscribeReannoTxsEvent(chan<- core.ReannoTxsEvent) event.Subscription
+    // SubscribeReannoTxsEvent should return an event subscription of
+    // ReannoTxsEvent and send events to the given channel.
+    SubscribeReannoTxsEvent(chan<- core.ReannoTxsEvent) event.Subscription
 }
 
 // votePool defines the methods needed from a votes pool implementation to
@@ -384,12 +385,12 @@ func newHandler(config *handlerConfig) (*handler, error) {
 		}
 		return p.RequestTxs(hashes)
 	}
-	addTxs := func(peer string, txs []*types.Transaction) []error {
-		errors := h.txpool.Add(txs, false, false)
-		for _, err := range errors {
-			if err == txpool.ErrInBlackList {
-				accountBlacklistPeerCounter.Inc(1)
-				p := h.peers.peer(peer)
+    addTxs := func(peer string, txs []*types.Transaction) []error {
+        errors := h.txpool.Add(txs, false, false)
+        for _, err := range errors {
+            if err == txpool.ErrInBlackList {
+                accountBlacklistPeerCounter.Inc(1)
+                p := h.peers.peer(peer)
 				if p != nil {
 					remoteAddr := p.remoteAddr()
 					if remoteAddr != nil {

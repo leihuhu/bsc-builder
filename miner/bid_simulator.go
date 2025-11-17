@@ -140,8 +140,6 @@ func newBidSimulator(
 	engine consensus.Engine,
 	bidWorker bidWorker,
 ) *bidSimulator {
-	// Set default value
-
 	b := &bidSimulator{
 		config:        config,
 		minGasPrice:   minGasPrice,
@@ -290,6 +288,16 @@ func (b *bidSimulator) GetBestBid(prevBlockHash common.Hash) *BidRuntime {
 	defer b.bestBidMu.RUnlock()
 
 	return b.bestBid[prevBlockHash]
+}
+
+// BestPackedBlockReward returns the packed block reward of the best simulated bid
+// for the given parent hash. If no bid is available, returns nil.
+func (b *bidSimulator) BestPackedBlockReward(parentHash common.Hash) *big.Int {
+    best := b.GetBestBid(parentHash)
+    if best == nil || best.packedBlockReward == nil {
+        return nil
+    }
+    return new(big.Int).Set(best.packedBlockReward)
 }
 
 // best bid to run is based on bid's expectedBlockReward before the bid is simulated
@@ -1030,7 +1038,7 @@ func (r *BidRuntime) commitTransaction(chain *core.BlockChain, chainConfig *para
 		}
 		// Checking against blob gas limit: It's kind of ugly to perform this check here, but there
 		// isn't really a better place right now. The blob gas limit is checked at block validation time
-		// and not during execution. This means core.ApplyTranbisaction will not return an error if the
+		// and not during execution. This means core.ApplyTransaction will not return an error if the
 		// tx has too many blobs. So we have to explicitly check it here.
 		if (env.blobs + len(sc.Blobs)) > eip4844.MaxBlobsPerBlock(chainConfig, r.env.header.Time) {
 			return errors.New("max data blobs reached")

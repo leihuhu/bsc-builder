@@ -53,9 +53,9 @@ type Backend interface {
 	ExtRPCEnabled() bool
 	RPCGasCap() uint64            // global gas cap for eth_call over rpc: DoS protection
 	RPCEVMTimeout() time.Duration // global timeout for eth_call over rpc: DoS protection
-	RPCTxFeeCap() float64         // global tx fee cap for all transaction related APIs
-	UnprotectedAllowed() bool     // allows only for EIP155 transactions.
-	PrivateTxMode() bool          // enable private tx rpc
+    RPCTxFeeCap() float64         // global tx fee cap for all transaction related APIs
+    UnprotectedAllowed() bool     // allows only for EIP155 transactions.
+    PrivateTxMode() bool          // enable private tx rpc
 
 	// Blockchain API
 	SetHead(number uint64)
@@ -78,8 +78,13 @@ type Backend interface {
 	SubscribeChainHeadEvent(ch chan<- core.ChainHeadEvent) event.Subscription
 	GetBlobSidecars(ctx context.Context, hash common.Hash) (types.BlobSidecars, error)
 
-	// Transaction pool API
-	SendTx(ctx context.Context, signedTx *types.Transaction) error
+    // Transaction pool API
+    SendTx(ctx context.Context, signedTx *types.Transaction, private bool) error
+    SendBundle(ctx context.Context, bundle *types.Bundle) error
+    SimulateGaslessBundle(bundle *types.Bundle) (*types.SimulateGaslessBundleResp, error)
+    BundlePrice() *big.Int
+    Bundles(ctx context.Context, fromBlock, toBlock int64) []*types.BundlesItem
+    GetTransaction(ctx context.Context, txHash common.Hash) (bool, *types.Transaction, common.Hash, uint64, uint64, error)
 	GetCanonicalTransaction(txHash common.Hash) (bool, *types.Transaction, common.Hash, uint64, uint64)
 	TxIndexDone() bool
 	GetPoolTransactions() (types.Transactions, error)
@@ -88,13 +93,13 @@ type Backend interface {
 	Stats() (pending int, queued int)
 	TxPoolContent() (map[common.Address][]*types.Transaction, map[common.Address][]*types.Transaction)
 	TxPoolContentFrom(addr common.Address) ([]*types.Transaction, []*types.Transaction)
-	SubscribeNewTxsEvent(chan<- core.NewTxsEvent) event.Subscription
+    SubscribeNewTxsEvent(chan<- core.NewTxsEvent) event.Subscription
 
-	ChainConfig() *params.ChainConfig
-	Engine() consensus.Engine
-	// CurrentValidators return the list of validator at the latest block
-	CurrentValidators() ([]common.Address, error)
-	HistoryPruningCutoff() uint64
+    ChainConfig() *params.ChainConfig
+    Engine() consensus.Engine
+    // CurrentValidators return the list of validator at the latest block
+    CurrentValidators() ([]common.Address, error)
+    HistoryPruningCutoff() uint64
 
 	// This is copied from filters.Backend
 	// eth/filters needs to be initialized from this backend type, so methods needed by
@@ -106,24 +111,26 @@ type Backend interface {
 	SubscribeFinalizedHeaderEvent(ch chan<- core.FinalizedHeaderEvent) event.Subscription
 	SubscribeNewVoteEvent(chan<- core.NewVoteEvent) event.Subscription
 
-	// MevRunning return true if mev is running
-	MevRunning() bool
-	// MevParams returns the static params of mev
-	MevParams() *types.MevParams
-	// StartMev starts mev
-	StartMev()
-	// StopMev stops mev
-	StopMev()
-	// AddBuilder adds a builder to the bid simulator.
-	AddBuilder(builder common.Address, builderUrl string) error
-	// RemoveBuilder removes a builder from the bid simulator.
-	RemoveBuilder(builder common.Address) error
-	// HasBuilder returns true if the builder is in the builder list.
-	HasBuilder(builder common.Address) bool
-	// SendBid receives bid from the builders.
-	SendBid(ctx context.Context, bid *types.BidArgs) (common.Hash, error)
-	// MinerInTurn returns true if the validator is in turn to propose the block.
-	MinerInTurn() bool
+    // MevRunning return true if mev is running
+    MevRunning() bool
+    // MevParams returns the static params of mev
+    MevParams() *types.MevParams
+    // StartMev starts mev
+    StartMev()
+    // StopMev stops mev
+    StopMev()
+    // AddBuilder adds a builder to the bid simulator.
+    AddBuilder(builder common.Address, builderUrl string) error
+    // RemoveBuilder removes a builder from the bid simulator.
+    RemoveBuilder(builder common.Address) error
+    // HasBuilder returns true if the builder is in the builder list.
+    HasBuilder(builder common.Address) bool
+    // SendBid receives bid from the builders.
+    SendBid(ctx context.Context, bid *types.BidArgs) (common.Hash, error)
+    // BestBidGasFee returns the gas fee of the best bid for the given parent hash.
+    BestBidGasFee(parentHash common.Hash) *big.Int
+    // MinerInTurn returns true if the validator is in turn to propose the block.
+    MinerInTurn() bool
 
 	CurrentView() *filtermaps.ChainView
 	NewMatcherBackend() filtermaps.MatcherBackend
@@ -150,12 +157,12 @@ func GetAPIs(apiBackend Backend) []rpc.API {
 		}, {
 			Namespace: "eth",
 			Service:   NewEthereumAccountAPI(apiBackend.AccountManager()),
-		}, {
-			Namespace: "mev",
-			Service:   NewMevAPI(apiBackend),
-		}, {
-			Namespace: "eth",
-			Service:   NewPrivateTxBundleAPI(apiBackend),
-		},
-	}
+        }, {
+            Namespace: "mev",
+            Service:   NewMevAPI(apiBackend),
+        }, {
+            Namespace: "eth",
+            Service:   NewPrivateTxBundleAPI(apiBackend),
+        },
+    }
 }

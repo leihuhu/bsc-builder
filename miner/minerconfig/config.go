@@ -61,7 +61,7 @@ type Config struct {
 	VoteEnable             bool           // Whether to vote when mining
 	MaxWaitProposalInSecs  *uint64        `toml:",omitempty"` // The maximum time to wait for the proposal to be done, it's aimed to prevent validator being slashed when restarting
 	DisableVoteAttestation bool           // Whether to skip assembling vote attestation
-	MevGasPriceFloor int64 `toml:",omitempty"`
+
 	Mev MevConfig // Mev configuration
 }
 
@@ -84,11 +84,6 @@ var DefaultConfig = Config{
 	Mev: DefaultMevConfig,
 }
 
-type ValidatorConfig struct {
-	Address common.Address
-	URL     string
-}
-
 type BuilderConfig struct {
 	Address common.Address
 	URL     string
@@ -104,10 +99,6 @@ type MevConfig struct {
 	BidSimulationLeftOver *time.Duration  `toml:",omitempty"`
 	NoInterruptLeftOver   *time.Duration  `toml:",omitempty"`
 	MaxBidsPerBuilder     *uint32         `toml:",omitempty"` // Maximum number of bids allowed per builder per block
-
-	BuilderEnabled bool              // Whether to enable bidder or not
-	Validators     []ValidatorConfig // The list of validators
-	BuilderAccount common.Address    // The account of the bidder
 }
 
 var DefaultMevConfig = MevConfig{
@@ -120,10 +111,6 @@ var DefaultMevConfig = MevConfig{
 	BidSimulationLeftOver: &defaultBidSimulationLeftOver,
 	NoInterruptLeftOver:   &defaultNoInterruptLeftOver,
 	MaxBidsPerBuilder:     &defaultMaxBidsPerBuilder,
-
-	BuilderEnabled: false,
-	Validators:     nil,
-	BuilderAccount: common.Address{},
 }
 
 func ApplyDefaultMinerConfig(cfg *Config) {

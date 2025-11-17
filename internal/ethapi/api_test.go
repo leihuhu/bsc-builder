@@ -614,20 +614,7 @@ func (b testBackend) SubscribeNewVoteEvent(ch chan<- core.NewVoteEvent) event.Su
 	panic("implement me")
 }
 func (b testBackend) SendTx(ctx context.Context, signedTx *types.Transaction, private bool) error {
-	panic("implement me")
-}
-func (b testBackend) SendBundle(ctx context.Context, bundle *types.Bundle) error {
-	panic("implement me")
-}
-func (b *testBackend) SimulateGaslessBundle(bundle *types.Bundle) (*types.SimulateGaslessBundleResp, error) {
-	//TODO implement me
-	panic("implement me")
-}
-func (b testBackend) BundlePrice() *big.Int {
-	panic("implement me")
-}
-func (b testBackend) Bundles(ctx context.Context, fromBlock, toBlock int64) []*types.BundlesItem {
-	panic("implement me")
+    panic("implement me")
 }
 func (b testBackend) GetCanonicalTransaction(txHash common.Hash) (bool, *types.Transaction, common.Hash, uint64, uint64) {
 	tx, blockHash, blockNumber, index := rawdb.ReadCanonicalTransaction(b.db, txHash)
@@ -677,8 +664,9 @@ func (b *testBackend) StopMev()                                                 
 func (b *testBackend) AddBuilder(builder common.Address, builderUrl string) error { return nil }
 func (b *testBackend) RemoveBuilder(builder common.Address) error                 { return nil }
 func (b *testBackend) SendBid(ctx context.Context, bid *types.BidArgs) (common.Hash, error) {
-	panic("implement me")
+    panic("implement me")
 }
+func (b *testBackend) BestBidGasFee(parentHash common.Hash) *big.Int { return new(big.Int) }
 func (b *testBackend) MinerInTurn() bool { return false }
 
 func (b testBackend) CurrentView() *filtermaps.ChainView {
@@ -4089,4 +4077,17 @@ func TestCreateAccessListWithStateOverrides(t *testing.T) {
 		StorageKeys: []common.Hash{{}},
 	}}
 	require.Equal(t, expected, result.Accesslist)
+}
+func (b testBackend) SendBundle(ctx context.Context, bundle *types.Bundle) error { return nil }
+func (b testBackend) SimulateGaslessBundle(bundle *types.Bundle) (*types.SimulateGaslessBundleResp, error) {
+    return &types.SimulateGaslessBundleResp{}, nil
+}
+func (b testBackend) BundlePrice() *big.Int { return new(big.Int) }
+func (b testBackend) Bundles(ctx context.Context, fromBlock, toBlock int64) []*types.BundlesItem { return []*types.BundlesItem{} }
+func (b testBackend) GetTransaction(ctx context.Context, txHash common.Hash) (bool, *types.Transaction, common.Hash, uint64, uint64, error) {
+    found, tx, blockHash, blockIndex, index := b.GetCanonicalTransaction(txHash)
+    if !found {
+        return false, nil, common.Hash{}, 0, 0, nil
+    }
+    return true, tx, blockHash, blockIndex, index, nil
 }

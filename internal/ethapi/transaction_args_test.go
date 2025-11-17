@@ -395,7 +395,7 @@ func (b *backendMock) SubscribeFinalizedHeaderEvent(ch chan<- core.FinalizedHead
 func (b *backendMock) SubscribeNewVoteEvent(ch chan<- core.NewVoteEvent) event.Subscription {
 	return nil
 }
-func (b *backendMock) SendTx(ctx context.Context, signedTx *types.Transaction) error { return nil }
+func (b *backendMock) SendTx(ctx context.Context, signedTx *types.Transaction, private bool) error { return nil }
 func (b *backendMock) GetCanonicalTransaction(txHash common.Hash) (bool, *types.Transaction, common.Hash, uint64, uint64) {
 	return false, nil, [32]byte{}, 0, 0
 }
@@ -432,10 +432,21 @@ func (b *backendMock) StopMev()                                                 
 func (b *backendMock) AddBuilder(builder common.Address, builderUrl string) error { return nil }
 func (b *backendMock) RemoveBuilder(builder common.Address) error                 { return nil }
 func (b *backendMock) SendBid(ctx context.Context, bid *types.BidArgs) (common.Hash, error) {
-	panic("implement me")
+    panic("implement me")
 }
+func (b *backendMock) BestBidGasFee(parentHash common.Hash) *big.Int { return new(big.Int) }
 func (b *backendMock) MinerInTurn() bool                            { return false }
 func (b *backendMock) CurrentView() *filtermaps.ChainView           { return nil }
 func (b *backendMock) NewMatcherBackend() filtermaps.MatcherBackend { return nil }
 
 func (b *backendMock) HistoryPruningCutoff() uint64 { return 0 }
+
+func (b *backendMock) SendBundle(ctx context.Context, bundle *types.Bundle) error { return nil }
+func (b *backendMock) SimulateGaslessBundle(bundle *types.Bundle) (*types.SimulateGaslessBundleResp, error) {
+    return &types.SimulateGaslessBundleResp{}, nil
+}
+func (b *backendMock) BundlePrice() *big.Int { return new(big.Int) }
+func (b *backendMock) Bundles(ctx context.Context, fromBlock, toBlock int64) []*types.BundlesItem { return []*types.BundlesItem{} }
+func (b *backendMock) GetTransaction(ctx context.Context, txHash common.Hash) (bool, *types.Transaction, common.Hash, uint64, uint64, error) {
+    return false, nil, common.Hash{}, 0, 0, nil
+}

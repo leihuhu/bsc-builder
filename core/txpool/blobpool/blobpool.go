@@ -335,8 +335,6 @@ type BlobPool struct {
 	txValidationFn txpool.ValidationFunction
 
 	lock sync.RWMutex // Mutex protecting the pool during reorg handling
-
-	privateTxs *types.TimestampedTxHashSet
 }
 
 // New creates a new blob transaction pool to gather, sort and filter inbound
@@ -355,7 +353,6 @@ func New(config Config, chain BlockChain, hasPendingAuth func(common.Address) bo
 		index:          make(map[common.Address][]*blobTxMeta),
 		spent:          make(map[common.Address]*uint256.Int),
 		txValidationFn: txpool.ValidateTransaction,
-		privateTxs:     types.NewExpiringTxHashSet(config.PrivateTxLifetime, metrics.NewRegisteredGauge("blobpool/private", nil)),
 	}
 }
 
@@ -560,7 +557,6 @@ func (p *BlobPool) recheck(addr common.Address, inclusions map[common.Hash]uint6
 
 			// Included transactions blobs need to be moved to the limbo
 			if filled && inclusions != nil {
-				p.privateTxs.Remove(txs[i].hash)
 				p.offload(addr, txs[i].nonce, txs[i].id, inclusions)
 			}
 		}
@@ -602,7 +598,6 @@ func (p *BlobPool) recheck(addr common.Address, inclusions map[common.Hash]uint6
 
 			// Included transactions blobs need to be moved to the limbo
 			if inclusions != nil {
-				p.privateTxs.Remove(txs[0].hash)
 				p.offload(addr, txs[0].nonce, txs[0].id, inclusions)
 			}
 			txs = txs[1:]
@@ -860,8 +855,6 @@ func (p *BlobPool) Reset(oldHead, newHead *types.Header) {
 	basefeeGauge.Update(int64(basefee.Uint64()))
 	blobfeeGauge.Update(int64(blobfee.Uint64()))
 	p.updateStorageMetrics()
-
-	p.privateTxs.Prune()
 }
 
 // reorg assembles all the transactors and missing transactions between an old
@@ -974,7 +967,7 @@ func (p *BlobPool) reorg(oldHead, newHead *types.Header) (map[common.Address][]*
 		// Generate the set that was lost to reinject into the pool
 		lost := make([]*types.Transaction, 0, len(discarded[addr]))
 		for _, tx := range types.TxDifference(discarded[addr], included[addr]) {
-			if p.Filter(tx) && !p.IsPrivateTxHash(tx.Hash()) {
+			if p.Filter(tx) {
 				lost = append(lost, tx)
 			}
 		}
@@ -1375,17 +1368,17 @@ func (p *BlobPool) AvailableBlobs(vhashes []common.Hash) int {
 //
 // Note, if sync is set the method will block until all internal maintenance
 // related to the add is finished. Only use this during tests for determinism.
-func (p *BlobPool) Add(txs []*types.Transaction, sync bool) []error {
+func (p *BlobPool) Add(txs []*types.Transaction, sync bool, private bool) []error {
 	var (
 		adds = make([]*types.Transaction, 0, len(txs))
 		errs = make([]error, len(txs))
 	)
-	for i, tx := range txs {
-		errs[i] = p.add(tx, private)
-		if errs[i] == nil {
-			adds = append(adds, tx.WithoutBlobTxSidecar())
-		}
-	}
+    for i, tx := range txs {
+        errs[i] = p.add(tx, private)
+        if errs[i] == nil {
+            adds = append(adds, tx.WithoutBlobTxSidecar())
+        }
+    }
 	if len(adds) > 0 {
 		p.discoverFeed.Send(core.NewTxsEvent{Txs: adds})
 		p.insertFeed.Send(core.NewTxsEvent{Txs: adds})
@@ -1463,11 +1456,6 @@ func (p *BlobPool) add(tx *types.Transaction, private bool) (err error) {
 		return err
 	}
 	meta := newBlobTxMeta(id, tx.Size(), p.store.Size(id), tx)
-
-	// Track private transactions, so they don't get leaked to the public mempool
-	if private {
-		p.privateTxs.Add(tx.Hash())
-	}
 
 	var (
 		next   = p.state.GetNonce(from)
@@ -1684,6 +1672,10 @@ func (p *BlobPool) Pending(filter txpool.PendingFilter) map[common.Address][]*tx
 	return pending
 }
 
+func (p *BlobPool) IsPrivateTxHash(hash common.Hash) bool {
+    return false
+}
+
 // updateStorageMetrics retrieves a bunch of stats from the data store and pushes
 // them out as metrics.
 func (p *BlobPool) updateStorageMetrics() {
@@ -1888,8 +1880,4 @@ func (p *BlobPool) Clear() {
 		blobfee = uint256.NewInt(params.BlobTxMinBlobGasprice)
 	)
 	p.evict = newPriceHeap(basefee, blobfee, p.index)
-}
-
-func (p *BlobPool) IsPrivateTxHash(hash common.Hash) bool {
-	return p.privateTxs.Contains(hash)
 }

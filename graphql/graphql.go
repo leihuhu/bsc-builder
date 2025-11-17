@@ -1393,17 +1393,17 @@ func (r *Resolver) SendRawTransaction(ctx context.Context, args struct{ Data hex
 	if err := tx.UnmarshalBinary(args.Data); err != nil {
 		return common.Hash{}, err
 	}
-	hash, err := ethapi.SubmitTransaction(ctx, r.backend, tx, r.backend.PrivateTxMode())
-	return hash, err
+    hash, err := ethapi.SubmitTransaction(ctx, r.backend, tx, r.backend.PrivateTxMode())
+    return hash, err
 }
 
 func (r *Resolver) SendPrivateRawTransaction(ctx context.Context, args struct{ Data hexutil.Bytes }) (common.Hash, error) {
-	tx := new(types.Transaction)
-	if err := tx.UnmarshalBinary(args.Data); err != nil {
-		return common.Hash{}, err
-	}
-	hash, err := ethapi.SubmitTransaction(ctx, r.backend, tx, true)
-	return hash, err
+    tx := new(types.Transaction)
+    if err := tx.UnmarshalBinary(args.Data); err != nil {
+        return common.Hash{}, err
+    }
+    hash, err := ethapi.SubmitTransaction(ctx, r.backend, tx, true)
+    return hash, err
 }
 
 // FilterCriteria encapsulates the arguments to `logs` on the root resolver object.

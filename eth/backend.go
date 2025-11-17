@@ -42,8 +42,8 @@ import (
 	"github.com/ethereum/go-ethereum/core/state/pruner"
 	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/core/txpool/blobpool"
-	"github.com/ethereum/go-ethereum/core/txpool/bundlepool"
-	"github.com/ethereum/go-ethereum/core/txpool/legacypool"
+    "github.com/ethereum/go-ethereum/core/txpool/legacypool"
+    "github.com/ethereum/go-ethereum/core/txpool/bundlepool"
 	"github.com/ethereum/go-ethereum/core/txpool/locals"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -287,12 +287,9 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 		stopCh:          make(chan struct{}),
 	}
 
-	eth.APIBackend = &EthAPIBackend{stack.Config().ExtRPCEnabled(), stack.Config().AllowUnprotectedTxs, stack.Config().PrivateTxMode, eth, nil}
+    eth.APIBackend = &EthAPIBackend{stack.Config().ExtRPCEnabled(), stack.Config().AllowUnprotectedTxs, stack.Config().PrivateTxMode, eth, nil}
 	if eth.APIBackend.allowUnprotectedTxs {
 		log.Info("Unprotected transactions allowed")
-	}
-	if eth.APIBackend.privateTxMode {
-		log.Info("Private transaction mode enabled")
 	}
 	ethAPI := ethapi.NewBlockChainAPI(eth.APIBackend)
 	eth.engine, err = ethconfig.CreateConsensusEngine(chainConfig, chainDb, ethAPI, genesisHash)
@@ -407,15 +404,15 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 	if config.TxPool.Journal != "" {
 		config.TxPool.Journal = stack.ResolvePath(config.TxPool.Journal)
 	}
-	legacyPool := legacypool.New(config.TxPool, eth.blockchain)
-	bundlePool := bundlepool.New(config.BundlePool, eth.blockchain)
+    legacyPool := legacypool.New(config.TxPool, eth.blockchain)
 
 	if config.BlobPool.Datadir != "" {
 		config.BlobPool.Datadir = stack.ResolvePath(config.BlobPool.Datadir)
 	}
-	eth.blobTxPool = blobpool.New(config.BlobPool, eth.blockchain, legacyPool.HasPendingAuth)
+    eth.blobTxPool = blobpool.New(config.BlobPool, eth.blockchain, legacyPool.HasPendingAuth)
+    bundlePool := bundlepool.New(config.BundlePool, eth.blockchain)
 
-	eth.txPool, err = txpool.New(config.TxPool.PriceLimit, eth.blockchain, []txpool.SubPool{legacyPool, eth.blobTxPool})
+    eth.txPool, err = txpool.New(config.TxPool.PriceLimit, eth.blockchain, []txpool.SubPool{legacyPool, eth.blobTxPool, bundlePool})
 	if err != nil {
 		return nil, err
 	}
@@ -457,10 +454,10 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 
 	eth.dropper = newDropper(eth.p2pServer.MaxDialedConns(), eth.p2pServer.MaxInboundConns())
 
-	eth.miner = miner.New(eth, &config.Miner, eth.EventMux(), eth.engine)
-	eth.miner.SetExtra(makeExtraData(config.Miner.ExtraData))
-	eth.miner.SetPrioAddresses(config.TxPool.Locals)
-	bundlePool.SetBundleSimulator(eth.miner)
+    eth.miner = miner.New(eth, &config.Miner, eth.EventMux(), eth.engine)
+    eth.miner.SetExtra(makeExtraData(config.Miner.ExtraData))
+    eth.miner.SetPrioAddresses(config.TxPool.Locals)
+    bundlePool.SetBundleSimulator(eth.miner)
 
 	// Create voteManager instance
 	if posa, ok := eth.engine.(consensus.PoSA); ok {
@@ -667,9 +664,9 @@ func (s *Ethereum) handleRemovals(parlia *parlia.Parlia, nonce uint64, registere
 			if err != nil {
 				return fmt.Errorf("failed to create node ID removal transaction: %v", err)
 			}
-			if err := s.txPool.Add([]*types.Transaction{trx}, false, false); err != nil {
-				return fmt.Errorf("failed to add node ID removal transaction to pool: %v", err)
-			}
+            if err := s.txPool.Add([]*types.Transaction{trx}, false, false); err != nil {
+                return fmt.Errorf("failed to add node ID removal transaction to pool: %v", err)
+            }
 			log.Info("Submitted node ID removal transaction for all node IDs")
 			return nil
 		}
@@ -704,9 +701,9 @@ func (s *Ethereum) handleRemovals(parlia *parlia.Parlia, nonce uint64, registere
 	if err != nil {
 		return fmt.Errorf("failed to create node ID removal transaction: %v", err)
 	}
-	if errs := s.txPool.Add([]*types.Transaction{trx}, false, false); len(errs) > 0 && errs[0] != nil {
-		return fmt.Errorf("failed to add node ID removal transaction to pool: %v", errs)
-	}
+    if errs := s.txPool.Add([]*types.Transaction{trx}, false, false); len(errs) > 0 && errs[0] != nil {
+        return fmt.Errorf("failed to add node ID removal transaction to pool: %v", errs)
+    }
 	log.Info("Submitted node ID removal transaction", "nodeIDs", nodeIDsToRemove)
 	return nil
 }
@@ -733,9 +730,9 @@ func (s *Ethereum) handleAdditions(parlia *parlia.Parlia, nonce uint64, register
 	if err != nil {
 		return fmt.Errorf("failed to create node ID registration transaction: %v", err)
 	}
-	if errs := s.txPool.Add([]*types.Transaction{trx}, false, false); len(errs) > 0 && errs[0] != nil {
-		return fmt.Errorf("failed to add node ID registration transaction to pool: %v", errs)
-	}
+    if errs := s.txPool.Add([]*types.Transaction{trx}, false, false); len(errs) > 0 && errs[0] != nil {
+        return fmt.Errorf("failed to add node ID registration transaction to pool: %v", errs)
+    }
 	log.Info("Submitted node ID registration transaction", "nodeIDs", nodeIDsToAdd)
 	return nil
 }

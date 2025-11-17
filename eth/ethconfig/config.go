@@ -29,8 +29,8 @@ import (
 	"github.com/ethereum/go-ethereum/consensus/parlia"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/history"
-	"github.com/ethereum/go-ethereum/core/txpool/blobpool"
-	"github.com/ethereum/go-ethereum/core/txpool/bundlepool"
+    "github.com/ethereum/go-ethereum/core/txpool/blobpool"
+    "github.com/ethereum/go-ethereum/core/txpool/bundlepool"
 	"github.com/ethereum/go-ethereum/core/txpool/legacypool"
 	"github.com/ethereum/go-ethereum/eth/gasprice"
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -69,7 +69,8 @@ var Defaults = Config{
 	FilterLogCacheSize:     32,
 	Miner:                  minerconfig.DefaultConfig,
 	TxPool:                 legacypool.DefaultConfig,
-	BlobPool:               blobpool.DefaultConfig,
+    BlobPool:               blobpool.DefaultConfig,
+    BundlePool:             bundlepool.Config{},
 	RPCGasCap:              50000000,
 	RPCEVMTimeout:          5 * time.Second,
 	GPO:                    FullNodeGPO,
@@ -172,10 +173,10 @@ type Config struct {
 	// Mining options
 	Miner minerconfig.Config
 
-	// Transaction pool options
-	TxPool     legacypool.Config
-	BlobPool   blobpool.Config
-	BundlePool bundlepool.Config
+    // Transaction pool options
+    TxPool     legacypool.Config
+    BlobPool   blobpool.Config
+    BundlePool bundlepool.Config
 
 	// Gas Price Oracle options
 	GPO gasprice.Config

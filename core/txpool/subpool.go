@@ -20,12 +20,11 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/holiman/uint256"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/event"
+	"github.com/holiman/uint256"
 )
 
 // LazyTransaction contains a small subset of the transaction properties that is
@@ -105,7 +104,7 @@ type SubPool interface {
 	// These should not be passed as a constructor argument - nor should the pools
 	// start by themselves - in order to keep multiple subpools in lockstep with
 	// one another.
-	Init(gasTip uint64, head *types.Header, reserver Reserver) error
+    Init(gasTip uint64, head *types.Header, reserver Reserver) error
 
 	// Close terminates any background processing threads and releases any held
 	// resources.
@@ -139,10 +138,10 @@ type SubPool interface {
 	// pool mutex.
 	ValidateTxBasics(tx *types.Transaction) error
 
-	// Add enqueues a batch of transactions into the pool if they are valid. Due
-	// to the large transaction churn, add may postpone fully integrating the tx
-	// to a later point to batch multiple ones together.
-	Add(txs []*types.Transaction, sync bool, private bool) []error
+        // Add enqueues a batch of transactions into the pool if they are valid. Due
+        // to the large transaction churn, add may postpone fully integrating the tx
+        // to a later point to batch multiple ones together.
+        Add(txs []*types.Transaction, sync bool, private bool) []error
 
 	// Pending retrieves all currently processable transactions, grouped by origin
 	// account and sorted by nonce.
@@ -151,11 +150,11 @@ type SubPool interface {
 	// reduce allocations and load on downstream subsystems.
 	Pending(filter PendingFilter) map[common.Address][]*LazyTransaction
 
-	// IsPrivateTxHash returns true if the transaction is a private transaction.
-	// This is used to filter out private transactions from the pool.
-	IsPrivateTxHash(hash common.Hash) bool
+        // IsPrivateTxHash returns true if the transaction is a private transaction.
+        // This is used to filter out private transactions from the pool.
+        IsPrivateTxHash(hash common.Hash) bool
 
-	// SubscribeTransactions subscribes to new transaction events. The subscriber
+        // SubscribeTransactions subscribes to new transaction events. The subscriber
 	// can decide whether to receive notifications only for newly seen transactions
 	// or also for reorged out ones.
 	SubscribeTransactions(ch chan<- core.NewTxsEvent, reorgs bool) event.Subscription
@@ -192,22 +191,22 @@ type SubPool interface {
 }
 
 type BundleSubpool interface {
-	// FilterBundle is a selector used to decide whether a bundle would be added
-	// to this particular subpool.
-	FilterBundle(bundle *types.Bundle) bool
+    // FilterBundle is a selector used to decide whether a bundle would be added
+    // to this particular subpool.
+    FilterBundle(bundle *types.Bundle) bool
 
-	// AddBundle enqueues a bundle into the pool if it is valid.
-	AddBundle(bundle *types.Bundle) error
+    // AddBundle enqueues a bundle into the pool if it is valid.
+    AddBundle(bundle *types.Bundle) error
 
-	// PendingBundles retrieves all currently processable bundles.
-	PendingBundles(blockNumber uint64, blockTimestamp uint64) []*types.Bundle
+    // PendingBundles retrieves all currently processable bundles.
+    PendingBundles(blockNumber uint64, blockTimestamp uint64) []*types.Bundle
 
-	// AllBundles returns all the bundles currently in the pool.
-	AllBundles() []*types.Bundle
+    // AllBundles returns all the bundles currently in the pool.
+    AllBundles() []*types.Bundle
 
-	// PruneBundle removes a bundle from the pool.
-	PruneBundle(hash common.Hash)
+    // PruneBundle removes a bundle from the pool.
+    PruneBundle(hash common.Hash)
 
-	// BundleMetrics queries the metrics in the bundle pool.
-	BundleMetrics(fromBlock, toBlock int64) map[int64][][]common.Hash
+    // BundleMetrics queries the metrics in the bundle pool.
+    BundleMetrics(fromBlock, toBlock int64) map[int64][][]common.Hash
 }
