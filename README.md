@@ -17,7 +17,14 @@ MEV, also known as Maximum (or Miner) Extractable Value, can be described as the
 
 Proposer-builder separation(PBS) solves this problem by reconfiguring the economics of MEV. Block builders create blocks and submit them to the block proposer, and the block proposer simply chooses the most profitable one, paying a fee to the block builder. This means even if a small group of specialized block builders dominate MEV extraction, the reward still goes to any validator on the network.
 
-## How it Works on BSC
+## Release Types
+There are three types of release, each with a clear purpose and version scheme:
+
+- **1.Stable Release**: production-ready builds for the vast majority of users.  Format: `v<Major>.<Minor>.<Patch>`, example: [v1.5.19](https://github.com/bnb-chain/bsc/releases/tag/v1.5.19).
+- **2.Feature Release**: early access to a single feature without affecting the core product. Format: `v<Major>.<Minor>.<Patch>-feature-<FeatureName>`, example: [v1.5.19-feature-SI](https://github.com/bnb-chain/bsc/releases/tag/v1.5.19-feature-SI).
+- **3.Preview Release**: bleeding-edge builds for users who want the latest code. Format: `v<Major>.<Minor>.<Patch>-<Meta>`, Meta values indicate maturity: alpha (experimental), beta (largely complete), rc (release candidate), example: [v1.5.0-alpha](https://github.com/bnb-chain/bsc/releases/tag/v1.5.0-alpha).
+
+## Key features
 
 ![PBS Workflow](./docs/assets/pbs_workflow.png)
 
@@ -45,7 +52,8 @@ The [Builder API Specification](https://github.com/bnb-chain/BEPs/blob/master/BE
 
 ### Customize Builder
 
-Although the builder offers great flexibility, there are still some essential standards that must be followed:
+Building `geth` requires both a Go (version 1.24 or later) and a C compiler (GCC 5 or higher). You can install
+them using your favourite package manager. Once the dependencies are installed, run
 
 1. The builder needs to set up a builder account, which is used to sign the block bid and receive fees. The builder can ask for a tip (builder fee) on the block that it sends to the sentry. If the block is finally selected, the builder account will receive the tip.
 2. The builder needs to implement the mev_reportIssue API to receive the errors report from validators.
@@ -217,7 +225,7 @@ $ geth --your-favourite-flags dumpconfig
 
 As a developer, sooner rather than later you'll want to start interacting with `geth` and the
 BSC network via your own programs and not manually through the console. To aid
-this, `geth` has built-in support for a JSON-RPC based APIs ([standard APIs](https://ethereum.github.io/execution-apis/api-documentation/),
+this, `geth` has built-in support for a JSON-RPC based APIs ([standard APIs](https://ethereum.org/en/developers/docs/apis/json-rpc/),
 [`geth` specific APIs](https://geth.ethereum.org/docs/interacting-with-geth/rpc), and [BSC's JSON-RPC API Reference](rpc/json-rpc-api.md)).
 These can be exposed via HTTP, WebSockets and IPC (UNIX sockets on UNIX based
 platforms, and named pipes on Windows).

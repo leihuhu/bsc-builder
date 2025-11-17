@@ -3,7 +3,7 @@ package ethapi
 import (
 	"context"
 	"fmt"
-	"math/big"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -26,13 +26,14 @@ func NewMevAPI(b Backend) *MevAPI {
 // If mev is not running or bid is invalid, return error.
 // Otherwise, creates a builder bid for the given argument, submit it to the miner.
 func (m *MevAPI) SendBid(ctx context.Context, args types.BidArgs) (common.Hash, error) {
+	ctx = context.WithValue(ctx, "receiveTime", time.Now().UnixMilli())
 	if !m.b.MevRunning() {
 		return common.Hash{}, types.ErrMevNotRunning
 	}
 
 	var (
-		rawBid        = args.RawBid
-		currentHeader = m.b.CurrentHeader() // `currentHeader` might change during use.
+		rawBid       = args.RawBid
+		currentBlock = m.b.CurrentBlock() // `CurrentBlock` might change during use.
 	)
 
 	if rawBid == nil {
@@ -40,7 +41,7 @@ func (m *MevAPI) SendBid(ctx context.Context, args types.BidArgs) (common.Hash, 
 	}
 
 	// only support bidding for the next block not for the future block
-	if latestBlockNumber := currentHeader.Number.Uint64(); rawBid.BlockNumber < latestBlockNumber+1 {
+	if latestBlockNumber := currentBlock.Number.Uint64(); rawBid.BlockNumber < latestBlockNumber+1 {
 		return common.Hash{}, types.NewInvalidBidError(
 			fmt.Sprintf("stale block number: %d, latest block: %d", rawBid.BlockNumber, latestBlockNumber))
 	} else if rawBid.BlockNumber > latestBlockNumber+1 {
@@ -55,9 +56,9 @@ func (m *MevAPI) SendBid(ctx context.Context, args types.BidArgs) (common.Hash, 
 		return common.Hash{}, types.ErrMevNotInTurn
 	}
 
-	if rawBid.ParentHash != currentHeader.Hash() {
+	if rawBid.ParentHash != currentBlock.Hash() {
 		return common.Hash{}, types.NewInvalidBidError(
-			fmt.Sprintf("non-aligned parent hash: %v", currentHeader.Hash()))
+			fmt.Sprintf("non-aligned parent hash: %v", currentBlock.Hash()))
 	}
 
 	if rawBid.GasFee == nil || rawBid.GasFee.Cmp(common.Big0) == 0 || rawBid.GasUsed == 0 {
@@ -85,10 +86,6 @@ func (m *MevAPI) SendBid(ctx context.Context, args types.BidArgs) (common.Hash, 
 	}
 
 	return m.b.SendBid(ctx, &args)
-}
-
-func (m *MevAPI) BestBidGasFee(_ context.Context, parentHash common.Hash) *big.Int {
-	return m.b.BestBidGasFee(parentHash)
 }
 
 func (m *MevAPI) Params() *types.MevParams {
